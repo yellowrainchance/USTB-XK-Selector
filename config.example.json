@@ -1,0 +1,23 @@
+{
+  "session": "",
+  "xkfsdm": "sztzk-b-b",
+  "run_mode": "grab",
+  "targets": [],
+  "target_kcdm": "",
+  "target_kxh": "",
+  "start_mode": "auto",
+  "start_time": "",
+  "end_mode": "auto",
+  "end_time": "",
+  "poll_interval": 5,
+  "pre_poll_interval": 30,
+  "direct_retries": 3,
+  "direct_retry_interval": 0,
+  "min_interval": 3,
+  "auto_submit": true,
+  "submit_mode": "direct",
+  "xktjz_direct": "rwtjzyx",
+  "xktjz_gwc": "rwtjzgwc",
+  "xktjz_yx": "gwctjzyx",
+  "log_keep_local": true
+}
