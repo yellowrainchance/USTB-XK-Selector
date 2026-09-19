@@ -106,13 +106,6 @@ pyinstaller --noconfirm --clean --onefile --windowed \
 
 打包版同样支持 `--onedir`（散文件目录，启动更快）。打包后 config/logs/图标目录自动落在 exe 旁。
 
-## CLI 只读自检
-
-```bash
-python check.py                      # 只校验配置与连通性，不选课
-python check.py --kcdm 课程代码      # 打印某门课当前余量/容量/已选
-```
-
 ## 免责声明
 
 - 本项目代码仅作技术学习与个人选课辅助，不保证在任何时间可用。

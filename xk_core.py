@@ -141,7 +141,9 @@ DEFAULT_CONFIG = {
     "xktjz_direct": "rwtjzyx",  # 未确认项1：先到先得直接选课的 p_xktjz
     "xktjz_gwc": "rwtjzgwc",    # 任务 → 购物车
     "xktjz_yx": "gwctjzyx",     # 购物车 → 已选（已确认字面量）
-    "log_keep_local": True,     # 运行日志是否自动保留到本地（logs/ 按天分文件，见 app.py LogPage）
+    "limit_mode": "auto",       # 限选门数来源：auto=跟随服务器规则 xkzys | manual=手填统一值
+    "limit_manual": 3,          # limit_mode=manual 时，对所有选课方式统一使用的限选门数
+    "log_keep_local": True,     # 运行日志是否自动保留到本地（logs/ 每次启动一个文件，见 app.py LogPage）
 }
 
 
@@ -868,7 +870,7 @@ class Monitor(threading.Thread):
         for t in self.targets:
             dm = t.get("xkfsdm") or ""
             rule = self.rules_by_way.get(dm) or {}
-            limit = _to_int(rule.get("xkzys"))
+            limit = effective_limit(self.cfg, rule)
             if t["kcdm"] in self.enrolled:
                 t["status"] = "done"
                 t["message"] = "已在已选列表"
@@ -1166,9 +1168,10 @@ class Monitor(threading.Thread):
             self.enrolled_by_way[dm] = r["enrolled_way"]
             rule = self.rules_by_way.get(dm) or {}
             if not silent:
+                lim_n = effective_limit(self.cfg, rule)
                 self._log("info", f"[{dm}] 阶段={rule.get('lcmc') or '?'} "
                                   f"模式={'先到先得' if rule.get('xkms') == '1' else rule.get('xkms')} "
-                                  f"限选{rule.get('xkzys') or '?'}门 窗口 {rule.get('ksrq')} ~ {rule.get('jsrq')}")
+                                  f"限选{lim_n or '?'}门 窗口 {rule.get('ksrq')} ~ {rule.get('jsrq')}")
             if not rule:
                 self._log("warn", f"[{dm}] 未读到规则对象（xkgzszOne），跳过窗口/限选判断")
         except SessionExpired:
@@ -1577,6 +1580,20 @@ def _to_int(v, default: int = 0) -> int:
         return int(str(v).strip())
     except (TypeError, ValueError):
         return default
+
+
+def effective_limit(cfg: dict, rule: dict) -> int | None:
+    """某个选课方式「生效的限选门数」。
+
+    auto   = 服务器规则 xkzys（素质拓展/专业拓展等各自返回，常见 3）
+    manual = config.limit_manual，对所有选课方式统一生效；<=0 视为不限
+    解析失败/缺失返回 None（按"不限/未知"处理，调用方显示 '?'）。
+    """
+    mode = (cfg.get("limit_mode") or "auto").strip()
+    if mode == "manual":
+        n = _to_int(cfg.get("limit_manual"))
+        return n if n > 0 else None
+    return _to_int(rule.get("xkzys")) or None
 
 
 def _parse_dt(s) -> datetime | None:

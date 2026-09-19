@@ -35,8 +35,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDateTimeEdit
 
 from xk_core import (APIError, APP_DIR, CONFIG_PATH, SAFE_INTERVAL,
                      SessionExpired, XKClient, Monitor, QrLogin,
-                     enum_cache_get, enum_cache_invalidate, extract_courses,
-                     extract_rules, load_config, match_course,
+                     effective_limit, enum_cache_get, enum_cache_invalidate,
+                     extract_courses, extract_rules, load_config, match_course,
                      normalize_targets, page_info, parse_skxx, remaining_of,
                      save_config, enrolled_of)
 
@@ -2111,8 +2111,9 @@ class SearchPage(QWidget):
             if w.get("xkfsdm") == dm:
                 ksrq = (w.get("ksrq") or "").strip()
                 jsrq = (w.get("jsrq") or "").strip()
+                lim = effective_limit(self.get_cfg(), w)
                 self.way_rule_label.setText(
-                    f"  限选 {w.get('xkzys') or '?'} 门 · {ksrq or '?'} ~ {jsrq or '?'}  ")
+                    f"  限选 {lim or '?'} 门 · {ksrq or '?'} ~ {jsrq or '?'}  ")
                 self.way_rule_label.setVisible(True)
                 return
         self.way_rule_label.setText("")
@@ -2695,11 +2696,7 @@ class TargetsPage(QWidget):
         for dm, items in groups.items():
             name = self._way_name(dm)
             rule = self._way_rules.get(dm) or {}
-            limit = rule.get("xkzys")
-            try:
-                limit = int(limit)
-            except (TypeError, ValueError):
-                limit = None
+            limit = effective_limit(self.get_cfg(), rule)
             if limit is not None:
                 left = limit - len(items)
                 parts.append(f"{name}：{len(items)}/{limit} 门（还可加 {max(0, left)}）")
@@ -2972,8 +2969,9 @@ class MonitorPage(QWidget):
                 continue
             w = self._way_rules.get(dm) or {}
             if w:
+                lim = effective_limit(cfg, w)
                 parts.append(f"{dm}: {self._way_name(dm)}（{w.get('ksrq') or '?'} ~ "
-                             f"{w.get('jsrq') or '?'}，限选 {w.get('xkzys') or '?'} 门）")
+                             f"{w.get('jsrq') or '?'}，限选 {lim or '?'} 门）")
         if parts:
             self.time_hint.setText("各目标所属选课方式的规则窗口：" + "；".join(parts))
         elif self._way_rules:
@@ -3542,6 +3540,41 @@ class SettingsPage(QWidget):
         rf.addWidget(dr_tip)
         layout.addWidget(retry_card)
 
+        # 限选门数
+        limit_card = QFrame()
+        limit_card.setObjectName("card")
+        lf = QVBoxLayout(limit_card)
+        lf.setContentsMargins(20, 18, 20, 18)
+        lf.setSpacing(12)
+        lf.addWidget(make_card_title("04  限选门数", "每个选课方式的选课上限，超出必被服务端拒绝"))
+        lr = QHBoxLayout()
+        lr.setSpacing(10)
+        lr.addWidget(QLabel("限选门数来源："))
+        self.limit_mode = QComboBox()
+        self.limit_mode.addItem("自动（跟随教务规则）", "auto")
+        self.limit_mode.addItem("手动指定（所有方式统一）", "manual")
+        self.limit_mode.setMinimumHeight(34)
+        lr.addWidget(self.limit_mode, 1)
+        lf.addLayout(lr)
+        lr2 = QHBoxLayout()
+        lr2.setSpacing(10)
+        lr2.addWidget(QLabel("手动限选门数："))
+        self.limit_manual = QSpinBox()
+        self.limit_manual.setRange(0, 20)
+        self.limit_manual.setSuffix(" 门")
+        self.limit_manual.setMinimumHeight(34)
+        lr2.addWidget(self.limit_manual)
+        lr2.addStretch(1)
+        lf.addLayout(lr2)
+        lm_tip = QLabel("自动：用服务器各选课方式自带的规则值（素质拓展/专业拓展等各自返回，通常 3）。"
+                        "手动：当自动值读不到、或想按自己的额度统一约束时，填一个固定值，"
+                        "所有选课方式共用（填 0 表示不限）。")
+        lm_tip.setObjectName("tipBox")
+        lm_tip.setWordWrap(True)
+        lf.addWidget(lm_tip)
+        layout.addWidget(limit_card)
+        self.limit_mode.currentIndexChanged.connect(self._sync_limit_ui)
+
         # 高级
         self.advanced_toggle = QCheckBox("显示高级设置（仅排查问题时展开）")
         self.advanced_toggle.setStyleSheet("font-size:13px; font-weight:600; padding:4px 0;")
@@ -3553,7 +3586,7 @@ class SettingsPage(QWidget):
         al = QVBoxLayout(self.advanced_widget)
         al.setContentsMargins(20, 18, 20, 18)
         al.setSpacing(12)
-        al.addWidget(make_card_title("04  高级", "轮询节流与提交参数"))
+        al.addWidget(make_card_title("05  高级", "轮询节流与提交参数"))
 
         timing = QFrame()
         timing.setObjectName("cardFlat")
@@ -3636,12 +3669,19 @@ class SettingsPage(QWidget):
     def _toggle_advanced(self, checked: bool):
         self.advanced_widget.setVisible(checked)
 
+    def _sync_limit_ui(self):
+        self.limit_manual.setEnabled(self.limit_mode.currentData() == "manual")
+
     def refresh(self):
         cfg = self.get_cfg()
         self.xkfsdm.setText(cfg.get("xkfsdm", "sztzk-b-b"))
         self.auto_submit.setChecked(bool(cfg.get("auto_submit", True)))
         self.submit_mode.setCurrentIndex(
             max(0, self.submit_mode.findData(cfg.get("submit_mode", "direct"))))
+        self.limit_mode.setCurrentIndex(
+            max(0, self.limit_mode.findData(cfg.get("limit_mode", "auto"))))
+        self.limit_manual.setValue(int(cfg.get("limit_manual", 3)))
+        self._sync_limit_ui()
         self.direct_retries.setValue(int(cfg.get("direct_retries", 3)))
         ri = cfg.get("direct_retry_interval")
         self.direct_retry_interval.setValue(
@@ -3658,6 +3698,8 @@ class SettingsPage(QWidget):
         cfg["xkfsdm"] = self.xkfsdm.text().strip() or "sztzk-b-b"
         cfg["auto_submit"] = self.auto_submit.isChecked()
         cfg["submit_mode"] = self.submit_mode.currentData()
+        cfg["limit_mode"] = self.limit_mode.currentData()
+        cfg["limit_manual"] = self.limit_manual.value()
         cfg["direct_retries"] = self.direct_retries.value()
         cfg["direct_retry_interval"] = self.direct_retry_interval.value()
         cfg["poll_interval"] = self.poll_interval.value()
@@ -3949,11 +3991,12 @@ class MainWindow(QMainWindow):
         self.status_bar.set_hint("")
         xkms = str(info.get("xkms"))
         mode_txt = "先到先得" if xkms == "1" else info.get("xkms")
+        lim = effective_limit(self.get_cfg(), {"xkzys": info.get("limit")})
         txt = (f"会话有效\n"
                f"选课学期：{info.get('xnxq')}\n"
                f"可选课程：{info.get('total')} 门\n"
                f"已选：全量 {info.get('enrolled_all')} 门 / 本方式 {info.get('enrolled_way')} 门\n"
-               f"模式：{mode_txt}    限选 {info.get('limit')} 门\n"
+               f"模式：{mode_txt}    限选 {lim or '?'} 门\n"
                f"选课窗口：{info.get('window')}\n"
                f"服务器时间偏差：{info.get('offset', 0):+.1f}s")
         self.session_page.info_label.setObjectName("okBox")

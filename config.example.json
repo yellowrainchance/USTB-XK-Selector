@@ -19,5 +19,7 @@
   "xktjz_direct": "rwtjzyx",
   "xktjz_gwc": "rwtjzgwc",
   "xktjz_yx": "gwctjzyx",
+  "limit_mode": "auto",
+  "limit_manual": 3,
   "log_keep_local": true
 }
